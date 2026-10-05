@@ -2,7 +2,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 #initial number:(data from 5.1)
-c1=1, c2 = c3 = 0.1
+c1 = 1
+c2 = c3 = 0.1
 Lr = c2
 alpha, beta, ytM, ytm, gamma = 0.3, 0.5, 1.0, 0.005, 0.5 #yt means yita!M for max and m for min
 n = 4
@@ -16,7 +17,8 @@ pre_lamda = pre_lamda * 10 / np.max(pre_lamda)
 lamda = np.diag(pre_lamda)
 Q = U @ lamda @ U.T
 
-x_actr = np.linalg.solve(c1 * P + c2 * Q, c2 * Q @ c3)
+x_actr = np.linalg.solve(c1 * P + c2 * Q, c2 *  Q @ (c3 * np.ones(n)))
+np.random.seed(40)
 
 #functions defined
 def f_hat(x):
@@ -24,11 +26,11 @@ def f_hat(x):
 def r_func(x):
     return c2 * (x - c3).T @ Q @ (x - c3) /2
 def func(x):
-    return f_hat(x) + r_func(x)
+    return float( f_hat(x) + r_func(x) )
 
 #gradient function:(I can not compute grad of a matrix so the result is from deepseek)
 def grad_f_hat(x):
-    return c1 * (P + P.T) * x
+    return c1 * (P + P.T) @ x / 2
 def grad_r_func(x):
     return c2 * Q @ (x - c3)
 def grad_func(x):
@@ -47,9 +49,10 @@ def btls(x, tri_delta, bt_ytm):
             break
     return ytr, cnt
 
-def ModelBasedDescent(x, delta, gamma, line_e0, cnt):
+def ModelBasedDescent(x, delta, gamma, line_e0):
     # init:
     self_ytm = 0.005
+    cnt = 0
     x_plus = x.copy()
     g_tilde = grad_f_hat(x) + delta
     line_e = line_e0
@@ -68,9 +71,9 @@ def ModelBasedDescent(x, delta, gamma, line_e0, cnt):
         local_inac.append(np.linalg.norm(x_plus - x_actr))
         local_mode.append('model')
 
-    return x, cnt, local_nfe, local_inac, local_mode
+    return x, local_nfe, local_inac, local_mode
 
-def GDC(gamma, iters=10000):
+def GDC(gamma, iters=1000):
     x = np.zeros(n)
     delta = grad_r_func(x)
     line_e0 = 0.0
@@ -84,7 +87,7 @@ def GDC(gamma, iters=10000):
     for i in range(iters):
         if np.linalg.norm(x - x_actr) < 1e-3:
             break
-        x, local_nfe, local_inac, local_mode = ModelBasedDescent(x, delta, gamma, line_e0, cnt_box)
+        x, local_nfe, local_inac, local_mode = ModelBasedDescent(x, delta, gamma, line_e0)
         history_nfe.extend(local_nfe)
         history_inac.extend(local_inac)
         history_mode.extend(local_mode)
@@ -104,27 +107,27 @@ def GDC(gamma, iters=10000):
 
     return history_nfe, history_inac, history_mode
 
-#int main():
+    #int main():
+if __name__ == "__main__":
+    nfe_06, inac_06, mode_06 = GDC(gamma=0.6)
+    nfe_09, inac_09, mode_09 = GDC(gamma=0.9)
 
-nfe_06, inac_06, mode_06 = GDC(gamma=0.6)
-nfe_09, inac_09, mode_09 = GDC(gamma=0.9)
+    fig, axs = plt.subplots(1, 2, figsize=(12, 5))
 
-fig, axs = plt.subplots(1, 2, figsize=(24, 10))
+    axs[0].set_title("GC Algorithm (gamma=0.6)")
+    for i in range(len(nfe_06)-1):
+        color = 'red' if mode_06[i] == 'model' else 'blue'
+        axs[0].plot(nfe_06[i:i+2], inac_06[i:i+2], color=color)
+    axs[0].set_yscale('log')
+    axs[0].set_xlabel("Number of Function Evaluations")
+    axs[0].set_ylabel("||x - x*||")
 
-axs[0].set_title("GC Algorithm (gamma=0.6)")
-for i in range(len(nfe_06)-1):
-    color = 'red' if mode_06[i] == 'model' else 'blue'
-    axs[0].plot(nfe_06[i:i+2], inac_06[i:i+2], color=color)
-axs[0].set_yscale('log')
-axs[0].set_xlabel("Number of Function Evaluations")
-axs[0].set_ylabel("||x - x*||")
+    axs[1].set_title("GC Algorithm (gamma=0.9)")
+    for i in range(len(nfe_09)-1):
+        color = 'red' if mode_09[i] == 'model' else 'blue'
+        axs[1].plot(nfe_09[i:i+2], inac_09[i:i+2], color=color)
+    axs[1].set_yscale('log')
+    axs[1].set_xlabel("Number of Function Evaluations")
+    axs[1].set_ylabel("||x - x*||")
 
-axs[1].set_title("GC Algorithm (gamma=0.9)")
-for i in range(len(nfe_09)-1):
-    color = 'red' if mode_09[i] == 'model' else 'blue'
-    axs[1].plot(nfe_09[i:i+2], inac_09[i:i+2], color=color)
-axs[1].set_yscale('log')
-axs[1].set_xlabel("Number of Function Evaluations")
-axs[1].set_ylabel("||x - x*||")
-
-plt.show()
+    plt.show()
