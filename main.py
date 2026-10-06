@@ -1,133 +1,163 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-#initial number:(data from 5.1)
-c1 = 1
-c2 = c3 = 0.1
+np.random.seed(42)
+
+c1, c2, c3 = 1, 0.1, 0.1
 Lr = c2
-alpha, beta, ytM, ytm, gamma = 0.3, 0.5, 1.0, 0.005, 0.5 #yt means yita!M for max and m for min
 n = 4
+alpha, beta, ytM = 0.3, 0.5, 1.0
+ita_min, ita_max = 0.005, 1
+cnt_global = 0
 
-#initial matrics
-P_12 = np.random.randn(n,n)
-P = P_12 @ P_12.T #make a SPD
-U, _ = np.linalg.qr(np.random.randn(n, n))#division
-pre_lamda = np.random.rand(n)
-pre_lamda = pre_lamda * 10 / np.max(pre_lamda)
-lamda = np.diag(pre_lamda)
-Q = U @ lamda @ U.T
+P_half = np.random.randn(n,n)
+P = P_half @ P_half.T
+U, _ = np.linalg.qr(np.random.randn(n, n))
+pre_d = np.random.rand(n)
+pre_d = pre_d * 10.0 / np.max(pre_d)
+D_matrix = np.diag(pre_d)
+Q = U @ D_matrix @ U.T
 
-x_actr = np.linalg.solve(c1 * P + c2 * Q, c2 *  Q @ (c3 * np.ones(n)))
-np.random.seed(40)
+x_hat_star = np.zeros(n)
+x_star = np.linalg.solve(c1 * P + c2 * Q, c2 *  Q @ ( c3 * np.ones(n) )).ravel()
 
-#functions defined
-def f_hat(x):
+def func_hat(x):
     return c1 * x.T @ P @ x / 2
+
 def r_func(x):
-    return c2 * (x - c3).T @ Q @ (x - c3) /2
+    return c2 * (x - c3).T @ Q @ (x - c3) / 2
+
 def func(x):
-    return float( f_hat(x) + r_func(x) )
+    return func_hat(x) + r_func(x)
 
-#gradient function:(I can not compute grad of a matrix so the result is from deepseek)
-def grad_f_hat(x):
-    return c1 * (P + P.T) @ x / 2
-def grad_r_func(x):
+def grad_func_hat(x):
+    return c1 * P @ x
+
+def grad_r(x):
     return c2 * Q @ (x - c3)
+
 def grad_func(x):
-    return grad_f_hat(x) + grad_r_func(x)
+    return grad_func_hat(x) + grad_r(x)
 
-def btls(x, tri_delta, bt_ytm):
-    ytr = ytM #r for require(d)
-    cnt = 1
-    const_func_numb = func(x)
-    while func(x - ytr * tri_delta) > const_func_numb - alpha * ytr * np.linalg.norm(tri_delta)**2:
-        cnt += 1
-        if ytr > bt_ytm :
-            ytr *= beta
+def BTLS(x_btls, imn_btls, imx_btls, vecvar_blts):
+    global cnt_global
+    
+    ita_btls = imx_btls
+    cnt_global += 1
+
+    while func(x_btls - ita_btls * vecvar_blts) > func(x_btls) - alpha * ita_btls * ( np.linalg.norm(vecvar_blts)) ** 2 :
+        cnt_global += 1
+        if ita_btls > imn_btls:
+            ita_btls = beta * ita_btls
         else:
-            ytr = 0
+            ita_btls = 0
             break
-    return ytr, cnt
+    
+    return ita_btls
 
-def ModelBasedDescent(x, delta, gamma, line_e0):
-    # init:
-    self_ytm = 0.005
-    cnt = 0
-    x_plus = x.copy()
-    g_tilde = grad_f_hat(x) + delta
-    line_e = line_e0
-    local_nfe, local_inac, local_mode = [], [], []
-
-    while line_e <= (1 - gamma) / gamma * np.linalg.norm(g_tilde):
-        x = x_plus.copy()
-        g_tilde = grad_f_hat(x) + delta
-        eta, cnt_s = btls(x, g_tilde, self_ytm)
-        cnt += cnt_s
-        if eta == 0:
+def MBD(x_mbd, delta_mbd, gamma, e0_line):
+    global cnt_global
+    x_plus_mbd = x_mbd
+    g_tilde = grad_func_hat(x_mbd) + delta_mbd
+    e_line = e0_line
+    nfe, inac, mode = [], [], []
+    while e_line <= (1 - gamma) / gamma * np.linalg.norm(g_tilde):
+        ita = BTLS(x_mbd, ita_min, ita_max, g_tilde)
+        if ita == 0:
             break
-        x_plus = x - eta * g_tilde
-        line_e = Lr * np.linalg.norm(x_plus - x) + line_e 
-        local_nfe.append(cnt)
-        local_inac.append(np.linalg.norm(x_plus - x_actr))
-        local_mode.append('model')
+        x_plus_mbd = x_mbd - ita * g_tilde
+        e_line += Lr * np.linalg.norm(x_plus_mbd - x_mbd)
+        x_mbd = x_plus_mbd
+        g_tilde = grad_func_hat(x_mbd) + delta_mbd
+        nfe.append(cnt_global)
+        inac.append(np.linalg.norm(x_plus_mbd - x_star))
+        mode.append('model')
+    return x_mbd, nfe, inac, mode
+        
+def GDC(gamma, iters = 10000):
+    global cnt_global, delta_gdc
+    cnt_global = 0
+    nfe, inac, mode = [], [], []
+    x_gdc = x_hat_star
+    e0_line = 0
+    delta_gdc = grad_r(x_hat_star)
 
-    return x, local_nfe, local_inac, local_mode
+    nfe.append(0)
+    inac.append(np.linalg.norm(x_gdc - x_star))
+    mode.append('model')
+    
+    for _ in range(iters):
 
-def GDC(gamma, iters=1000):
-    x = np.zeros(n)
-    delta = grad_r_func(x)
-    line_e0 = 0.0
-    cnt_box = [0]
-    ytm = 0.005
-    history_nfe, history_inac, history_mode = [], [], []
-    history_nfe.append(cnt_box[0])
-    history_inac.append(np.linalg.norm(x - x_actr))
-    history_mode.append('model')
+        x_gdc, _nfe, _inac, _mode = MBD(x_gdc, delta_gdc, gamma, e0_line)
+        nfe.extend(_nfe)
+        inac.extend(_inac)
+        mode.extend(_mode)
 
-    for i in range(iters):
-        if np.linalg.norm(x - x_actr) < 1e-3:
+        cnt_global += n
+        delta_gdc = grad_func(x_gdc) - grad_func_hat(x_gdc)
+        ita = BTLS(x_gdc, 0, ita_max, grad_func(x_gdc))
+        x_plus_gdc = x_gdc - ita * grad_func(x_gdc)
+        e0_line = Lr * np.linalg.norm(x_plus_gdc - x_gdc)
+        x_gdc = x_plus_gdc
+
+        nfe.append(cnt_global)
+        inac.append(np.linalg.norm(x_gdc - x_star))
+        mode.append('modelfree')
+
+        if np.linalg.norm(x_gdc - x_star) < 1e-3:
             break
-        x, local_nfe, local_inac, local_mode = ModelBasedDescent(x, delta, gamma, line_e0)
-        history_nfe.extend(local_nfe)
-        history_inac.extend(local_inac)
-        history_mode.extend(local_mode)
-        if np.linalg.norm(x - x_actr) < 1e-3:
+    return nfe, inac, mode
+
+def GDC0(iters=10000):
+    global cnt_global
+    
+    x_gcd0 = x_hat_star
+    nfe, inac = [], []
+    cnt_global = 0
+    
+    for _ in range(iters):
+        if np.linalg.norm(x_gcd0 - x_star) < 1e-3:
             break
-        cnt_box[0] += n
-        grad_exact = grad_func(x)
-        eta, cnt_s = btls(x, grad_exact, 0.0)
-        cnt_box[0] += cnt_s
-        x_old = x.copy()
-        x = x - eta * grad_exact
-        history_nfe.append(cnt_box[0])
-        history_inac.append(np.linalg.norm(x - x_actr))
-        history_mode.append('modelfree')
-        delta = grad_exact - grad_f_hat(x)
-        line_e0 = Lr * np.linalg.norm(x - x_old)
 
-    return history_nfe, history_inac, history_mode
+        cnt_global += n
+        ita = BTLS(x_gcd0, 0, ita_max, grad_func(x_gcd0))#BTLS(x_btls, imn_btls, imx_btls,gamma):
+        x_gcd0 = x_gcd0 - ita * grad_func(x_gcd0)
+        
+        nfe.append(cnt_global)
+        inac.append(np.linalg.norm(x_gcd0 - x_star))
+        
+    return nfe, inac
 
-    #int main():
-if __name__ == "__main__":
-    nfe_06, inac_06, mode_06 = GDC(gamma=0.6)
-    nfe_09, inac_09, mode_09 = GDC(gamma=0.9)
-
-    fig, axs = plt.subplots(1, 2, figsize=(12, 5))
+if __name__ ==  "__main__":
+    nfe_6, inac_6, mode_6 = GDC(gamma=0.6)
+    print("0.6")
+    nfe_9, inac_9, mode_9 = GDC(gamma=0.9)
+    print("0.9")
+    nfe_0, inac_0 = GDC0()
+    print("0.0")
+    fig, axs = plt.subplots(1, 3, figsize=(24, 5))
 
     axs[0].set_title("GC Algorithm (gamma=0.6)")
-    for i in range(len(nfe_06)-1):
-        color = 'red' if mode_06[i] == 'model' else 'blue'
-        axs[0].plot(nfe_06[i:i+2], inac_06[i:i+2], color=color)
+    for i in range(len(nfe_6)-1):
+        color = 'red' if mode_6[i] == 'model' else 'blue'
+        axs[0].plot(nfe_6[i:i+2], inac_6[i:i+2], color=color)
     axs[0].set_yscale('log')
     axs[0].set_xlabel("Number of Function Evaluations")
     axs[0].set_ylabel("||x - x*||")
 
     axs[1].set_title("GC Algorithm (gamma=0.9)")
-    for i in range(len(nfe_09)-1):
-        color = 'red' if mode_09[i] == 'model' else 'blue'
-        axs[1].plot(nfe_09[i:i+2], inac_09[i:i+2], color=color)
+    for i in range(len(nfe_9)-1):
+        color = 'red' if mode_9[i] == 'model' else 'blue'
+        axs[1].plot(nfe_9[i:i+2], inac_9[i:i+2], color=color)
     axs[1].set_yscale('log')
     axs[1].set_xlabel("Number of Function Evaluations")
     axs[1].set_ylabel("||x - x*||")
 
+    axs[2].set_title("Model-Free Method")
+    axs[2].plot(nfe_0, inac_0, color='blue')
+    axs[2].set_yscale('log')
+    axs[2].set_xlabel("Number of Function Evaluations")
+    axs[2].set_ylabel("||x - x*||")
+
+    plt.tight_layout()
     plt.show()
