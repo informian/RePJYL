@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-np.random.seed(42)
+np.random.seed(10)
 
 c1, c2, c3 = 1, 0.1, 0.1
 Lr = c2
@@ -14,41 +14,33 @@ P_half = np.random.randn(n,n)
 P = P_half @ P_half.T
 U, _ = np.linalg.qr(np.random.randn(n, n))
 pre_d = np.random.rand(n)
-pre_d = pre_d * 10.0 / np.max(pre_d)
-D_matrix = np.diag(pre_d)
-Q = U @ D_matrix @ U.T
+pre_d = pre_d * 10.0 / np.max(pre_d) 
+Q = U @ np.diag(pre_d) @ U.T
+
+vec3 = c3 * np.ones(n)
 
 x_hat_star = np.zeros(n)
-x_star = np.linalg.solve(c1 * P + c2 * Q, c2 *  Q @ ( c3 * np.ones(n) )).ravel()
+x_star = np.linalg.solve(c1 * P + c2 * Q, c2 *  Q @ vec3)
 
-def func_hat(x):
-    return c1 * x.T @ P @ x / 2
-
-def r_func(x):
-    return c2 * (x - c3).T @ Q @ (x - c3) / 2
-
-def func(x):
-    return func_hat(x) + r_func(x)
-
-def grad_func_hat(x):
-    return c1 * P @ x
-
-def grad_r(x):
-    return c2 * Q @ (x - c3)
-
-def grad_func(x):
-    return grad_func_hat(x) + grad_r(x)
+def func_hat(x):    return 0.5 * c1 * x.T @ P @ x
+def r_func(x):    return 0.5 * c2 * (x - vec3).T @ Q @ (x - vec3)
+def func(x):    return func_hat(x) + r_func(x)
+def grad_func_hat(x):    return c1 * P @ x
+def grad_r(x):    return c2 * Q @ (x - vec3)
+def grad_func(x):    return grad_func_hat(x) + grad_r(x)
 
 def BTLS(x_btls, imn_btls, imx_btls, vecvar_blts):
     global cnt_global
-    
+    print(cnt_global)
     ita_btls = imx_btls
     cnt_global += 1
+    const_fx = func(x_btls)
+    const_nlnv = np.linalg.norm(vecvar_blts)
 
-    while func(x_btls - ita_btls * vecvar_blts) > func(x_btls) - alpha * ita_btls * ( np.linalg.norm(vecvar_blts)) ** 2 :
+    while func(x_btls - ita_btls * vecvar_blts) > const_fx - alpha * ita_btls * ( const_nlnv ** 2 ):
         cnt_global += 1
         if ita_btls > imn_btls:
-            ita_btls = beta * ita_btls
+            ita_btls *= beta
         else:
             ita_btls = 0
             break
@@ -57,48 +49,57 @@ def BTLS(x_btls, imn_btls, imx_btls, vecvar_blts):
 
 def MBD(x_mbd, delta_mbd, gamma, e0_line):
     global cnt_global
-    x_plus_mbd = x_mbd
+    x_plus_mbd = x_mbd.copy()
     g_tilde = grad_func_hat(x_mbd) + delta_mbd
     e_line = e0_line
     nfe, inac, mode = [], [], []
-    while e_line <= (1 - gamma) / gamma * np.linalg.norm(g_tilde):
-        ita = BTLS(x_mbd, ita_min, ita_max, g_tilde)
-        if ita == 0:
-            break
+
+    ita = BTLS(x_mbd.copy(), ita_min, ita_max, g_tilde)
+    x_plus_mbd = x_mbd - ita * g_tilde
+    e_line += Lr * np.linalg.norm(x_plus_mbd - x_mbd)
+
+    nfe.append(cnt_global)
+    inac.append(np.linalg.norm(x_plus_mbd - x_star))
+    mode.append('model')
+
+    while e_line <= (1 - gamma) / gamma * np.linalg.norm(g_tilde) and ita != 0:
+
+        x_mbd = x_plus_mbd.copy()
+        g_tilde = grad_func_hat(x_mbd) + delta_mbd
+        ita = BTLS(x_mbd.copy(), ita_min, ita_max, g_tilde)
         x_plus_mbd = x_mbd - ita * g_tilde
         e_line += Lr * np.linalg.norm(x_plus_mbd - x_mbd)
-        x_mbd = x_plus_mbd
-        g_tilde = grad_func_hat(x_mbd) + delta_mbd
         nfe.append(cnt_global)
         inac.append(np.linalg.norm(x_plus_mbd - x_star))
         mode.append('model')
-    return x_mbd, nfe, inac, mode
+
+    return x_plus_mbd, nfe, inac, mode
         
-def GDC(gamma, iters = 10000):
-    global cnt_global, delta_gdc
+def GDC(gamma, iters = 1000):
+    global cnt_global
     cnt_global = 0
     nfe, inac, mode = [], [], []
-    x_gdc = x_hat_star
+    x_gdc = x_hat_star.copy()
     e0_line = 0
-    delta_gdc = grad_r(x_hat_star)
+    delta_gdc = grad_r(x_gdc)
 
-    nfe.append(0)
+    nfe.append(cnt_global)
     inac.append(np.linalg.norm(x_gdc - x_star))
     mode.append('model')
     
     for _ in range(iters):
 
-        x_gdc, _nfe, _inac, _mode = MBD(x_gdc, delta_gdc, gamma, e0_line)
+        x_gdc, _nfe, _inac, _mode = MBD(x_gdc.copy(), delta_gdc, gamma, e0_line)
         nfe.extend(_nfe)
         inac.extend(_inac)
         mode.extend(_mode)
 
         cnt_global += n
-        delta_gdc = grad_func(x_gdc) - grad_func_hat(x_gdc)
-        ita = BTLS(x_gdc, 0, ita_max, grad_func(x_gdc))
+        delta_gdc = grad_r(x_gdc)
+        ita = BTLS(x_gdc.copy(), 0, ita_max, grad_func(x_gdc))
         x_plus_gdc = x_gdc - ita * grad_func(x_gdc)
         e0_line = Lr * np.linalg.norm(x_plus_gdc - x_gdc)
-        x_gdc = x_plus_gdc
+        x_gdc = x_plus_gdc.copy()
 
         nfe.append(cnt_global)
         inac.append(np.linalg.norm(x_gdc - x_star))
@@ -106,12 +107,13 @@ def GDC(gamma, iters = 10000):
 
         if np.linalg.norm(x_gdc - x_star) < 1e-3:
             break
+
     return nfe, inac, mode
 
-def GDC0(iters=10000):
+def GDC0(iters=1000):
     global cnt_global
     
-    x_gcd0 = x_hat_star
+    x_gcd0 = x_hat_star.copy()
     nfe, inac = [], []
     cnt_global = 0
     
