@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-np.random.seed(10)
+np.random.seed(42)
 
 c1, c2, c3 = 1, 0.1, 0.1
 Lr = c2
@@ -31,7 +31,6 @@ def grad_func(x):    return grad_func_hat(x) + grad_r(x)
 
 def BTLS(x_btls, imn_btls, imx_btls, vecvar_blts):
     global cnt_global
-    print(cnt_global)
     ita_btls = imx_btls
     cnt_global += 1
     const_fx = func(x_btls)
@@ -132,14 +131,11 @@ def GDC0(iters=1000):
 
 if __name__ ==  "__main__":
     nfe_6, inac_6, mode_6 = GDC(gamma=0.6)
-    print("0.6")
     nfe_9, inac_9, mode_9 = GDC(gamma=0.9)
-    print("0.9")
     nfe_0, inac_0 = GDC0()
-    print("0.0")
     fig, axs = plt.subplots(1, 3, figsize=(24, 5))
 
-    axs[0].set_title("GC Algorithm (gamma=0.6)")
+    axs[0].set_title("gamma=0.6")
     for i in range(len(nfe_6)-1):
         color = 'red' if mode_6[i] == 'model' else 'blue'
         axs[0].plot(nfe_6[i:i+2], inac_6[i:i+2], color=color)
@@ -147,7 +143,7 @@ if __name__ ==  "__main__":
     axs[0].set_xlabel("Number of Function Evaluations")
     axs[0].set_ylabel("||x - x*||")
 
-    axs[1].set_title("GC Algorithm (gamma=0.9)")
+    axs[1].set_title("gamma=0.9")
     for i in range(len(nfe_9)-1):
         color = 'red' if mode_9[i] == 'model' else 'blue'
         axs[1].plot(nfe_9[i:i+2], inac_9[i:i+2], color=color)
